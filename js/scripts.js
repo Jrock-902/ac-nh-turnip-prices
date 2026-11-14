@@ -74,6 +74,106 @@ const previous_pattern_radios = getPreviousPatternRadios();
 const permalink_input = $('#permalink-input');
 const permalink_button = $('#permalink-btn');
 const snackbar = $('#snackbar');
+const quantityInput = document.getElementById('turnip-quantity');
+const profitSellPrice = document.getElementById('profit-sell-price');
+let preferredProfitSlot = '';
+
+const updateProfitSellOptions = function (formatBells) {
+  const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+  const entries = getSellPrices().flatMap((value, index) => {
+    const price = parsePositiveInteger(value);
+    if (price === null) return [];
+    const label = i18next.t('profit.price-option', {
+      day: i18next.t('weekdays.' + days[Math.floor(index / 2)]),
+      time: i18next.t(index % 2 ? 'times.afternoon' : 'times.morning'),
+      price: formatBells(price),
+      interpolation: { escapeValue: false },
+    });
+    return [{ id: sell_inputs[index].id, label, price }];
+  });
+
+  const options = entries.length ? entries : [{ id: '', label: i18next.t('profit.no-prices') }];
+  if (profitSellPrice.options.length !== options.length || options.some(({ id, label }, index) => {
+    const option = profitSellPrice.options[index];
+    return option.value !== id || option.text !== label;
+  })) {
+    profitSellPrice.options.length = 0;
+    options.forEach(({ id, label }) => profitSellPrice.add(new Option(label, id)));
+  }
+
+  const preferred = entries.find(({ id }) => id === preferredProfitSlot);
+  if (!preferred) preferredProfitSlot = '';
+  const selected = preferred || entries[entries.length - 1];
+  profitSellPrice.disabled = !selected;
+  profitSellPrice.value = selected ? selected.id : '';
+  return selected ? selected.price : null;
+};
+
+const saveTurnipQuantity = function () {
+  try {
+    const quantity = parsePositiveInteger(quantityInput.value);
+    if (quantity === null) localStorage.removeItem('turnip_quantity');
+    else localStorage.setItem('turnip_quantity', String(quantity));
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+const renderProfitCalculator = function () {
+  const quantity = parsePositiveInteger(quantityInput.value);
+  const invalid = quantityInput.validity.badInput || (quantityInput.value !== '' && quantity === null);
+  quantityInput.setAttribute('aria-invalid', String(invalid));
+  quantityInput.setCustomValidity(invalid ? i18next.t('profit.invalid-quantity') : '');
+  document.getElementById('quantity-error').hidden = !invalid;
+
+  // Only change live-region text when its value changes.
+  const setText = (id, value) => {
+    const element = document.getElementById(id);
+    if (element.textContent !== value) element.textContent = value;
+  };
+  const language = i18next.resolvedLanguage || i18next.language || 'en';
+  const locale = { ua: 'uk', ph: 'fil' }[language] || language;
+  const formatBells = (value, signed = false) => i18next.t('profit.bells', {
+    amount: new Intl.NumberFormat(locale, { signDisplay: signed ? 'exceptZero' : 'auto' }).format(value),
+    interpolation: { escapeValue: false },
+  });
+  const sellingPrice = updateProfitSellOptions(formatBells);
+  const purchasePrice = parsePositiveInteger(parseInt(buy_input.val()));
+  const result = calculateProfit(quantity, purchasePrice, sellingPrice);
+  const unknown = i18next.t('profit.unknown');
+
+  let message = 'scenario';
+  if (quantity === null) message = 'empty';
+  else if (purchasePrice === null) message = 'missing-buy';
+  else if (result === null) message = 'too-large';
+  else if (sellingPrice === null) message = 'missing-sell';
+  else if (result.revenue === null) message = 'too-large';
+  const profitMessage = document.getElementById('profit-message');
+  profitMessage.hidden = invalid;
+  setText('profit-message', invalid ? '' : i18next.t('profit.' + message));
+  document.getElementById('profit-values').hidden = result === null || invalid;
+
+  const profit = result ? result.profit : null;
+  const outcome = profit === null ? 'net' : profit > 0 ? 'gain' : profit < 0 ? 'loss' : 'even';
+  document.getElementById('profit-net-row').className = 'profit-' + outcome;
+  setText('profit-net-label', i18next.t('profit.' + outcome));
+  setText('profit-investment', result ? formatBells(result.investment) : unknown);
+  setText('profit-break-even', result ? formatBells(result.breakEven) : unknown);
+  setText('profit-revenue', result && result.revenue !== null ? formatBells(result.revenue) : unknown);
+  setText('profit-net', profit !== null ? formatBells(profit, true) : unknown);
+  setText('profit-roi', result && result.roi !== null ? new Intl.NumberFormat(locale, {
+    style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2, signDisplay: 'exceptZero',
+  }).format(result.roi / 100) : unknown);
+};
+
+const updateProfitCalculator = function () {
+  if (!quantityInput || !profitSellPrice) return;
+  try {
+    renderProfitCalculator();
+  } catch (error) {
+    console.error('Could not render the profit calculator', error);
+  }
+};
 
 //Functions
 const fillFields = function (prices, first_buy, previous_pattern) {
@@ -98,6 +198,24 @@ const fillFields = function (prices, first_buy, previous_pattern) {
 };
 
 const initialize = function () {
+  let quantityTimer;
+  if (quantityInput && profitSellPrice) {
+    try {
+      quantityInput.value = parsePositiveInteger(localStorage.getItem('turnip_quantity')) || '';
+    } catch (e) {
+      console.error(e);
+    }
+    quantityInput.addEventListener('input', function () {
+      saveTurnipQuantity();
+      clearTimeout(quantityTimer);
+      quantityTimer = setTimeout(updateProfitCalculator, 500);
+    });
+    profitSellPrice.addEventListener('change', function () {
+      preferredProfitSlot = profitSellPrice.value;
+      updateProfitCalculator();
+    });
+  }
+
   try {
     const previous = getPrevious();
     const first_buy = previous[0];
@@ -135,6 +253,12 @@ const initialize = function () {
       if (window.history.replaceState && sharedParams.some(param => url.searchParams.has(param))) {
         sharedParams.forEach(param => url.searchParams.delete(param));
         window.history.replaceState({}, null, url);
+      }
+      if (quantityInput) {
+        clearTimeout(quantityTimer);
+        quantityInput.value = '';
+        preferredProfitSlot = '';
+        saveTurnipQuantity();
       }
       localStorage.removeItem("welcome_dismissed");
       if (welcomeBox) welcomeBox.style.display = "";
@@ -517,6 +641,7 @@ const update = function () {
   }
 
   calculateOutput(prices, first_buy, previous_pattern);
+  updateProfitCalculator();
 
   if (!state.scrolled) {
     state.scrolled = true;
