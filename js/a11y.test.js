@@ -157,11 +157,13 @@ describe('Accessibility: Select labels in drawer', () => {
 });
 
 describe('Accessibility: Radio group semantics', () => {
-  it('first-time radio group is wrapped in fieldset with legend', () => {
+  it('first-time radio group has a legend and associates its guidance', () => {
     const doc = getDOM();
     const fieldset = doc.querySelector('fieldset:has(#first-time-radio-no)');
     expect(fieldset).not.toBeNull();
     expect(fieldset.querySelector('legend')).not.toBeNull();
+    const help = doc.getElementById(fieldset.getAttribute('aria-describedby'));
+    expect(help.getAttribute('data-i18n')).toBe('[html]first-time.description');
   });
 
   it('pattern radio group is wrapped in fieldset with legend', () => {

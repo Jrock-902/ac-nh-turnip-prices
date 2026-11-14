@@ -466,7 +466,9 @@ const announceResults = function (count) {
 
 const calculateOutput = function (data, first_buy, previous_pattern) {
   $("#decision").empty();
+  const predictionError = document.getElementById("prediction-error");
   if (isEmpty(data)) {
+    predictionError.hidden = true;
     hideChart();
     announceResults(0);
     return;
@@ -477,10 +479,12 @@ const calculateOutput = function (data, first_buy, previous_pattern) {
   let analyzed_possibilities = predictor.analyze_possibilities();
   if (analyzed_possibilities[0].weekGuaranteedMinimum === Number.POSITIVE_INFINITY) {
     hideChart();
-    $(".error:hidden").show();
+    document.getElementById("prediction-first-buy-hint").hidden = !first_buy;
+    predictionError.hidden = false;
+    announceResults(0);
     return;
   }
-  $(".error:visible").hide();
+  predictionError.hidden = true;
   $(".chart-wrapper:hidden").show();
   $(".table-wrapper:hidden").show();
   let buy_price = parseInt(buy_input.val());

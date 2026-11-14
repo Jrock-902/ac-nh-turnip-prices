@@ -13,8 +13,9 @@ const predictionsSource = fs.readFileSync(path.join(__dirname, 'predictions.js')
 const scriptsSource = fs.readFileSync(path.join(__dirname, 'scripts.js'), 'utf-8');
 const profitSource = fs.readFileSync(path.join(__dirname, 'profit.js'), 'utf-8');
 const translationsSource = fs.readFileSync(path.join(__dirname, 'translations.js'), 'utf-8');
-const calculatorHTML = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8')
-  .match(/<section class="profit-calculator"[\s\S]*?<\/section>/)[0];
+const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+const calculatorHTML = indexHtml.match(/<section class="profit-calculator"[\s\S]*?<\/section>/)[0];
+const predictionErrorHTML = indexHtml.match(/<div class="dialog-box error"[\s\S]*?<\/div>/)[0];
 const english = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'locales', 'en.json'), 'utf-8'));
 
 // Minimal HTML structure matching index.html
@@ -51,7 +52,7 @@ const HTML_TEMPLATE = `<!doctype html>
     <button type="button" id="reset" class="button button--reset"></button>
   </form>
 
-  <div class="dialog-box error" style="display:none;"></div>
+  ${predictionErrorHTML}
   <div class="chart-wrapper" style="display:none;">
     <canvas id="chart" width="100%" height="100"></canvas>
   </div>
@@ -1095,14 +1096,46 @@ describe('calculateOutput', () => {
     expect(args[3]).toHaveLength(13); // labels (Sunday + 6 days * 2)
   });
 
-  it('shows error for impossible prices', () => {
-    const errorDiv = env.document.querySelector('.dialog-box.error');
-    env.window.calculateOutput([100, 100, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999], false, null);
-    // With fudge factor it might find something or show error
-    // Either output has content or error is visible
-    const output = env.document.getElementById('output').innerHTML;
-    const errorVisible = errorDiv.style.display !== 'none';
-    expect(output.length > 0 || errorVisible).toBe(true);
+  it('shows price checks and clears old results when predictions stop matching', () => {
+    const error = env.document.getElementById('prediction-error');
+    const firstBuyHint = env.document.getElementById('prediction-first-buy-hint');
+    const prices = [102, 102, 85, 107, 183, 305, 105, 121, 34, 62, 69, 88, 31, 61];
+
+    env.window.calculateOutput([102, 102, ...Array(12).fill(NaN)], false, 0);
+    expect(env.document.getElementById('output').innerHTML).toContain('<tr>');
+    expect(error.hidden).toBe(true);
+
+    env.window.calculateOutput(prices, false, 0);
+    expect(error.hidden).toBe(false);
+    expect(error.querySelector('[data-i18n="errors.check-prices"]')).not.toBeNull();
+    expect(firstBuyHint.hidden).toBe(true);
+    expect(env.document.getElementById('output').innerHTML).toBe('');
+    expect(env.document.getElementById('results-live').textContent).toBe('0 patterns found');
+
+    env.window.calculateOutput(Array(14).fill(NaN), false, 0);
+    expect(error.hidden).toBe(true);
+  });
+
+  it('shows first-time buyer guidance for #430 and hides the alert when the setting is corrected', () => {
+    const shared = setupEnvironment({ search: '?prices=103.93.89.85.81.76.113.192.265.158.137.85.77&first=true&pattern=3' });
+    try {
+      const error = shared.document.getElementById('prediction-error');
+      const firstBuyHint = shared.document.getElementById('prediction-first-buy-hint');
+      shared.window.initialize();
+      shared.window.update();
+
+      expect(error.hidden).toBe(false);
+      expect(firstBuyHint.hidden).toBe(false);
+      expect(shared.document.getElementById('first-time-radio-yes').checked).toBe(true);
+
+      shared.document.getElementById('first-time-radio-no').checked = true;
+      shared.window.update();
+
+      expect(error.hidden).toBe(true);
+      expect(shared.document.getElementById('output').textContent).toContain('patterns.large-spike');
+    } finally {
+      shared.dom.window.close();
+    }
   });
 
   it('renders pattern names from i18next', () => {

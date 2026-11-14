@@ -10,7 +10,7 @@
   },
   "first-time": {
     "title": "First-Time Buyer",
-    "description": "Is this the first time a resident is buying turnips from Daisy Mae on <b>your own</b> island?<i>(This affects your pattern)</i>",
+    "description": "Choose <b>Yes</b> for your island's first-ever week buying turnips from Daisy Mae. If any resident bought from her on your island in an earlier week, choose <b>No</b>.",
     "yes": "Yes",
     "no": "No"
   },
@@ -127,7 +127,10 @@
     }
   },
   "errors": {
-    "impossible-values": "Oops! There seems to be an error with your turnip predictions. Please check your inputs.",
-    "github": "If your turnip prices are correct and you have not time traveled, please <a href=\"https://github.com/mikebryant/ac-nh-turnip-prices/issues\">submit a report.</a>"
+    "impossible-values": "No turnip price pattern matches these inputs.",
+    "first-time-buyer": "If any resident bought turnips from Daisy Mae on your island in an earlier week, set First-Time Buyer to No.",
+    "check-prices": "Use Daisy Mae's Sunday price from your own island, or leave it blank if you're unsure. Check each AM or PM slot and use prices from the same island and week.",
+    "time-travel": "If moving the in-game clock backward reset your prices, use entries from after the reset.",
+    "github": "Still seeing this message? Include your permalink when you <a href=\"https://github.com/mikebryant/ac-nh-turnip-prices/issues\">report the problem</a>."
   }
 }
