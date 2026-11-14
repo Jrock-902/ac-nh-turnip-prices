@@ -1137,6 +1137,64 @@ describe('Integration scenarios', () => {
   });
 });
 
+// ─── Historical Reports ──────────────────────────────────────────────────────
+
+describe('Historical prediction reports', () => {
+  // Original report numbers refer to mikebryant/ac-nh-turnip-prices.
+  it('recognizes the large spike in #430 with first-time buyer set to no', () => {
+    const prices = [103, 103, 93, 89, 85, 81, 76, 113, 192, 265, 158, 137, 85, 77];
+    const previousPattern = PATTERN.SMALL_SPIKE;
+
+    const [, ...firstBuyMatches] = new Predictor(prices, true, previousPattern).analyze_possibilities();
+    expect(firstBuyMatches).toHaveLength(0);
+
+    const predictor = new Predictor(prices, false, previousPattern);
+    const [, ...matches] = predictor.analyze_possibilities();
+    expect(predictor.fudge_factor).toBe(0);
+    expect(matches.map(match => match.pattern_number)).toEqual([PATTERN.LARGE_SPIKE]);
+  });
+
+  it('finds a large spike in #499 when the island buy price is unknown and first-time buyer is off', () => {
+    const sellPrices = [86, 81, 116, 141, 231, 197, 123, 88, 71, 58, 69, 50];
+    const previousPattern = PATTERN.LARGE_SPIKE;
+    const reportedPrices = [92, 92, ...sellPrices];
+    const [, ...firstBuyMatches] = new Predictor(reportedPrices, true, previousPattern).analyze_possibilities();
+    const [, ...knownBuyMatches] = new Predictor(reportedPrices, false, previousPattern).analyze_possibilities();
+    expect(firstBuyMatches).toHaveLength(0);
+    expect(knownBuyMatches).toHaveLength(0);
+
+    const predictor = new Predictor([NaN, NaN, ...sellPrices], false, previousPattern);
+    const [, ...matches] = predictor.analyze_possibilities();
+    expect(predictor.fudge_factor).toBe(0);
+    expect(new Set(matches.map(match => match.pattern_number))).toEqual(new Set([PATTERN.LARGE_SPIKE]));
+    expect(new Set(matches.map(match => match.prices[0].min))).toEqual(new Set([99, 100]));
+  });
+
+  it('rejects #574 when the post-peak price is too low for a large spike', () => {
+    const prices = [102, 102, 85, 107, 183, 305, 105, 121, 34, 62, 69, 88, 31, 61];
+    const [, ...matches] = new Predictor(prices, false, PATTERN.FLUCTUATING).analyze_possibilities();
+
+    expect(matches).toHaveLength(0);
+  });
+
+  it('rejects the full #595 sequence with either first-time buyer setting', () => {
+    const prices = [103, 103, 51, 45, 113, 150, 168, 167, 80, 76, 73, 70, 65, 61];
+    const [, ...firstBuyMatches] = new Predictor(prices, true, PATTERN.DECREASING).analyze_possibilities();
+    const [, ...repeatBuyMatches] = new Predictor(prices, false, PATTERN.DECREASING).analyze_possibilities();
+
+    expect(firstBuyMatches).toHaveLength(0);
+    expect(repeatBuyMatches).toHaveLength(0);
+  });
+
+  it.fails('caps the missing Wednesday AM price below the known small spike peak in a partial #595 replay', () => {
+    // Omit Wednesday AM and stop at Wednesday PM to isolate the price bounds around the peak.
+    const prices = [103, 103, 51, 45, 113, 150, NaN, 167, NaN, NaN, NaN, NaN, NaN, NaN];
+    const [summary] = new Predictor(prices, true, PATTERN.DECREASING).analyze_possibilities();
+
+    expect(summary.prices[6].max).toBe(166);
+  });
+});
+
 // ─── Edge Cases ──────────────────────────────────────────────────────────────
 
 describe('Edge cases', () => {
