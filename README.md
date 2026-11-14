@@ -31,7 +31,7 @@ This is a fork of [mikebryant/ac-nh-turnip-prices](https://github.com/mikebryant
 - **Updated dependencies** — jQuery 3.7.1, Chart.js 4.5.0, i18next 25, replaced deprecated i18next-xhr-backend with i18next-http-backend
 - **Removed Google Analytics** — the UA tracking tag was deprecated
 - **Improved PWA setup** — complete precache file list, proper cache versioning, manifest fields
-- **Comprehensive test suite** — 324 tests covering prediction logic, expected values, pattern detection, UI functions, and accessibility
+- **Comprehensive test suite** — tests covering prediction logic, expected values, pattern detection, UI functions, and accessibility
 - **CI pipeline** — GitHub Actions runs tests on PRs and pushes; pre-push hook runs tests locally
 
 ## Running locally
@@ -47,6 +47,13 @@ npm install
 npm test
 npm run test:coverage
 ```
+
+## Profit calculator
+
+Enter your Sunday purchase price and quantity to see your total investment and
+break-even price. Select a selling price you entered to see the estimated
+revenue, profit or loss, and percentage return for selling the full quantity.
+The quantity is saved in your browser and stays private when you share prices.
 
 ## Contributing
 
