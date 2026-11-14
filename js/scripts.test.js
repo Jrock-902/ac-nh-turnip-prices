@@ -13,8 +13,9 @@ const predictionsSource = fs.readFileSync(path.join(__dirname, 'predictions.js')
 const scriptsSource = fs.readFileSync(path.join(__dirname, 'scripts.js'), 'utf-8');
 const profitSource = fs.readFileSync(path.join(__dirname, 'profit.js'), 'utf-8');
 const translationsSource = fs.readFileSync(path.join(__dirname, 'translations.js'), 'utf-8');
-const calculatorHTML = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8')
-  .match(/<section class="profit-calculator"[\s\S]*?<\/section>/)[0];
+const indexHtml = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+const calculatorHTML = indexHtml.match(/<section class="profit-calculator"[\s\S]*?<\/section>/)[0];
+const startNextWeekHTML = indexHtml.match(/<button[^>]+id="start-next-week"[^>]*><\/button>/)[0];
 const english = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'locales', 'en.json'), 'utf-8'));
 
 // Minimal HTML structure matching index.html
@@ -48,6 +49,7 @@ const HTML_TEMPLATE = `<!doctype html>
     ${calculatorHTML}
     <input id="permalink-input" type="text" readOnly />
     <button type="button" id="permalink-btn" class="button permalink"></button>
+    ${startNextWeekHTML}
     <button type="button" id="reset" class="button button--reset"></button>
   </form>
 
@@ -1238,6 +1240,91 @@ describe('reset', () => {
       reload?.window.close();
       env.window.close();
     }
+  });
+});
+
+describe('Start next week', () => {
+  const priorPrices = JSON.stringify([101, 101, 85, ...Array(11).fill(null)]);
+  let env;
+  const field = id => env.document.getElementById(id);
+
+  beforeEach(() => {
+    env = setupEnvironment({
+      search: '?prices=100.112.120.75.68.59.115.125.73.67.120..&pattern=2',
+      localStorage: { sell_prices: priorPrices, previous_pattern: '3', turnip_quantity: '80' },
+    });
+    env.window.initialize();
+    env.window.update();
+  });
+  afterEach(() => { env.window.close(); });
+
+  it('saves the matching pattern and opens a blank week with it selected on reload', async () => {
+    const translator = i18next.createInstance();
+    await translator.init({ lng: 'en', resources: { en: { translation: english } } });
+    env.window.i18next = translator;
+
+    expect(field('start-next-week').hidden).toBe(false);
+    expect(field('pattern-radio-decreasing').checked).toBe(true);
+    field('start-next-week').click();
+
+    expect(env.window.confirm).toHaveBeenCalledWith(expect.stringContaining('Fluctuating'));
+    expect(field('pattern-radio-fluctuating').checked).toBe(true);
+    expect(field('first-time-radio-no').checked).toBe(true);
+    expect(field('buy').value).toBe('');
+    expect(field('sell_2').value).toBe('');
+    expect(field('sell_11').value).toBe('');
+    expect(field('turnip-quantity').value).toBe('');
+    expect(field('start-next-week').hidden).toBe(true);
+    expect(new URLSearchParams(env.window.location.search).has('prices')).toBe(false);
+    expect(env.store.previous_pattern).toBe('0');
+    expect(env.store.turnip_quantity).toBeUndefined();
+
+    const reloaded = setupEnvironment({ search: env.window.location.search, localStorage: env.store });
+    try {
+      reloaded.window.initialize();
+      expect(reloaded.document.getElementById('pattern-radio-fluctuating').checked).toBe(true);
+      expect(reloaded.document.getElementById('sell_2').value).toBe('');
+    } finally {
+      reloaded.window.close();
+    }
+  });
+
+  it('preserves both the displayed and saved weeks when cancelled', () => {
+    env.window.confirm.mockReturnValue(false);
+    field('start-next-week').click();
+
+    expect(env.window.confirm).toHaveBeenCalledOnce();
+    expect(field('pattern-radio-decreasing').checked).toBe(true);
+    expect(field('sell_2').value).toBe('112');
+    expect(field('turnip-quantity').value).toBe('80');
+    expect(env.store.sell_prices).toBe(priorPrices);
+    expect(env.store.previous_pattern).toBe('3');
+  });
+
+  it('rechecks pending price edits before offering to clear the week', () => {
+    expect(field('start-next-week').hidden).toBe(false);
+    field('sell_2').value = '999';
+    field('start-next-week').click();
+
+    expect(env.window.confirm).not.toHaveBeenCalled();
+    expect(field('start-next-week').hidden).toBe(true);
+    expect(field('sell_2').value).toBe('999');
+    expect(env.store.sell_prices).toBe(priorPrices);
+  });
+
+  it('hides the action with multiple patterns or no entered selling prices', () => {
+    env.document.querySelectorAll('input[id^="sell_"]').forEach(input => { input.value = ''; });
+    field('sell_2').value = '88';
+    env.window.update();
+    expect(field('start-next-week').hidden).toBe(true);
+    expect(env.document.getElementById('decision').textContent).toContain('output.likely-pattern');
+
+    field('sell_2').value = '';
+    field('first-time-radio-yes').checked = true;
+    env.window.update();
+
+    expect(field('start-next-week').hidden).toBe(true);
+    expect(env.document.getElementById('output').textContent).toContain('patterns.small-spike');
   });
 });
 

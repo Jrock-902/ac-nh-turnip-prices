@@ -74,9 +74,11 @@ const previous_pattern_radios = getPreviousPatternRadios();
 const permalink_input = $('#permalink-input');
 const permalink_button = $('#permalink-btn');
 const snackbar = $('#snackbar');
+const startNextWeekButton = document.getElementById('start-next-week');
 const quantityInput = document.getElementById('turnip-quantity');
 const profitSellPrice = document.getElementById('profit-sell-price');
 let preferredProfitSlot = '';
+const patternKeys = {0: 'fluctuating', 1: 'large-spike', 2: 'decreasing', 3: 'small-spike', 4: 'all'};
 
 const updateProfitSellOptions = function (formatBells) {
   const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
@@ -244,26 +246,48 @@ const initialize = function () {
 
   $("#permalink-btn").on("click", copyPermalink);
 
+  const clearWeek = function (previousPattern) {
+    sell_inputs.forEach(input => input.value = '');
+    fillFields([], false, previousPattern);
+    const url = new URL(window.location.href);
+    const sharedParams = ['prices', 'first', 'pattern'];
+    if (window.history.replaceState && sharedParams.some(param => url.searchParams.has(param))) {
+      sharedParams.forEach(param => url.searchParams.delete(param));
+      window.history.replaceState({}, null, url);
+    }
+    if (quantityInput) {
+      clearTimeout(quantityTimer);
+      quantityInput.value = '';
+      preferredProfitSlot = '';
+      saveTurnipQuantity();
+    }
+    update();
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   $("#reset").on("click", function () {
     if (window.confirm(i18next.t("prices.reset-warning"))) {
-      sell_inputs.forEach(input => input.value = '');
-      fillFields([], false, -1);
-      const url = new URL(window.location.href);
-      const sharedParams = ['prices', 'first', 'pattern'];
-      if (window.history.replaceState && sharedParams.some(param => url.searchParams.has(param))) {
-        sharedParams.forEach(param => url.searchParams.delete(param));
-        window.history.replaceState({}, null, url);
-      }
-      if (quantityInput) {
-        clearTimeout(quantityTimer);
-        quantityInput.value = '';
-        preferredProfitSlot = '';
-        saveTurnipQuantity();
-      }
       localStorage.removeItem("welcome_dismissed");
       if (welcomeBox) welcomeBox.style.display = "";
-      update();
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      clearWeek(-1);
+    }
+  });
+
+  startNextWeekButton?.addEventListener("click", function () {
+    if (startNextWeekButton.hidden) return;
+    // Price edits are debounced. Check the latest inputs before clearing the week.
+    update();
+    if (startNextWeekButton.hidden) return;
+
+    const previousPattern = Number(startNextWeekButton.value);
+    const pattern = i18next.t("patterns." + patternKeys[previousPattern]);
+    if (window.confirm(i18next.t("prices.start-next-week-warning", {
+      pattern,
+      interpolation: { escapeValue: false },
+    }))) {
+      window.populated_from_query = false;
+      clearWeek(previousPattern);
+      buy_input.focus();
     }
   });
 
@@ -455,6 +479,7 @@ const hideChart = function() {
   $("#output").html("");
   $(".chart-wrapper").hide();
   $(".table-wrapper").hide();
+  if (startNextWeekButton) startNextWeekButton.hidden = true;
 };
 
 const announceResults = function (count) {
@@ -471,7 +496,6 @@ const calculateOutput = function (data, first_buy, previous_pattern) {
     announceResults(0);
     return;
   }
-  let pat_desc = {0:"fluctuating", 1:"large-spike", 2:"decreasing", 3:"small-spike", 4:"all"};
   let output_possibilities = "";
   let predictor = new Predictor(data, first_buy, previous_pattern);
   let analyzed_possibilities = predictor.analyze_possibilities();
@@ -488,7 +512,7 @@ const calculateOutput = function (data, first_buy, previous_pattern) {
 
   let expected_values = compute_expected_values(analyzed_possibilities);
   for (let poss of analyzed_possibilities) {
-    var out_line = "<tr><td class='table-pattern'>" + i18next.t("patterns." + pat_desc[poss.pattern_number])  + "</td>";
+    var out_line = "<tr><td class='table-pattern'>" + i18next.t("patterns." + patternKeys[poss.pattern_number])  + "</td>";
     const style_price = buy_price || poss.prices[0].min;
     if (previous_pattern_number != poss.pattern_number) {
       previous_pattern_number = poss.pattern_number;
@@ -538,11 +562,16 @@ const calculateOutput = function (data, first_buy, previous_pattern) {
   update_chart(data, analyzed_possibilities, expected_values, labels);
 
   const pattern_probs = get_pattern_probabilities(analyzed_possibilities);
+  if (startNextWeekButton) {
+    const canCarryPattern = pattern_probs.length === 1 && !isEmpty(data.slice(2));
+    startNextWeekButton.hidden = !canCarryPattern;
+    startNextWeekButton.value = canCarryPattern ? pattern_probs[0].pattern_number : '';
+  }
   if (pattern_probs.length > 0 && pattern_probs[0].probability < 1) {
     const top = pattern_probs[0];
     $("#decision").append(
       `<p>${i18next.t("output.likely-pattern", [
-        i18next.t("patterns." + pat_desc[top.pattern_number]),
+        i18next.t("patterns." + patternKeys[top.pattern_number]),
         displayPercentage(top.probability)
       ])}</p>`
     );

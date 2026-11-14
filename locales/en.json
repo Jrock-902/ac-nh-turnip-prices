@@ -33,6 +33,8 @@
     },
     "copy-permalink": "Copy permalink",
     "permalink-copied": "Permalink copied!",
+    "start-next-week": "Start next week",
+    "start-next-week-warning": "Start next week with {{pattern}} as Previous Pattern? This clears the prices and turnip quantity saved in this browser.",
     "reset": "Reset Turnip Prophet",
     "reset-warning": "Are you sure you want to reset all fields?\n\nThis cannot be undone!"
   },
