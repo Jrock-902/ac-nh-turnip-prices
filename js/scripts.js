@@ -130,6 +130,12 @@ const initialize = function () {
     if (window.confirm(i18next.t("prices.reset-warning"))) {
       sell_inputs.forEach(input => input.value = '');
       fillFields([], false, -1);
+      const url = new URL(window.location.href);
+      const sharedParams = ['prices', 'first', 'pattern'];
+      if (window.history.replaceState && sharedParams.some(param => url.searchParams.has(param))) {
+        sharedParams.forEach(param => url.searchParams.delete(param));
+        window.history.replaceState({}, null, url);
+      }
       localStorage.removeItem("welcome_dismissed");
       if (welcomeBox) welcomeBox.style.display = "";
       update();

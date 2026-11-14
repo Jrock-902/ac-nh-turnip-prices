@@ -878,6 +878,38 @@ describe('initialize', () => {
   });
 });
 
+describe('reset', () => {
+  it('clears shared prices from the URL so a reload restores the saved week', () => {
+    const savedPrices = JSON.stringify([100, 100, 90, ...Array(11).fill(null)]);
+    const env = setupEnvironment({
+      search: '/?prices=108.169&first=true&pattern=1&ref=example#week',
+      localStorage: { sell_prices: savedPrices },
+    });
+    let reload;
+    try {
+      env.window.initialize();
+      expect(env.document.getElementById('buy').value).toBe('108');
+      expect(env.document.getElementById('sell_2').value).toBe('169');
+
+      env.document.getElementById('reset').click();
+      expect(env.document.getElementById('buy').value).toBe('');
+      expect(env.document.getElementById('sell_2').value).toBe('');
+      expect(env.window.location.search).toBe('?ref=example');
+      expect(env.window.location.hash).toBe('#week');
+      env.window.update();
+      expect(env.store.sell_prices).toBe(savedPrices);
+
+      reload = setupEnvironment({ search: env.window.location.search, localStorage: env.store });
+      reload.window.initialize();
+      expect(reload.document.getElementById('buy').value).toBe('100');
+      expect(reload.document.getElementById('sell_2').value).toBe('90');
+    } finally {
+      reload?.window.close();
+      env.window.close();
+    }
+  });
+});
+
 describe('update', () => {
   it('does nothing before initialization', () => {
     const env = setupEnvironment();
