@@ -1095,6 +1095,20 @@ describe('calculateOutput', () => {
     expect(args[3]).toHaveLength(13); // labels (Sunday + 6 days * 2)
   });
 
+  it('shows the fractional forecast when the average is above a Friday offer', () => {
+    const friday = setupEnvironment({ now: new Date(2026, 10, 13, 15).getTime() });
+    try {
+      const prices = [100, 100, 112, 120, 75, 68, 59, 115, 125, 73, 67, 115, NaN, NaN];
+      friday.window.calculateOutput(prices, false, 3);
+      const decision = friday.document.getElementById('decision').textContent;
+
+      expect(decision).toContain('output.sell-later');
+      expect(decision).toContain('output.sell-slot-average 115.50');
+    } finally {
+      friday.window.close();
+    }
+  });
+
   it('shows error for impossible prices', () => {
     const errorDiv = env.document.querySelector('.dialog-box.error');
     env.window.calculateOutput([100, 100, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999, 999], false, null);

@@ -33,6 +33,29 @@ const PROBABILITY_MATRIX = {
 };
 
 const RATE_MULTIPLIER = 10000;
+const PRICE_ROUNDING_OFFSET = 0.99999;
+
+// Four-point Gauss–Legendre rule on [0, 1], used inside each peak price bin.
+const PEAK_QUADRATURE = [
+  [0.06943184420297371, 0.17392742256872693],
+  [0.33000947820757187, 0.32607257743127307],
+  [0.6699905217924281, 0.32607257743127307],
+  [0.9305681557970262, 0.17392742256872693],
+];
+
+function integral_of_trunc(value) {
+  const magnitude = Math.abs(value);
+  const whole = Math.floor(magnitude);
+  return whole * (magnitude - (whole + 1) / 2);
+}
+
+function uniform_price_mean(raw_min, raw_max) {
+  const min = raw_min + PRICE_ROUNDING_OFFSET;
+  const max = raw_max + PRICE_ROUNDING_OFFSET;
+  const first_price = Math.trunc(min);
+  if (first_price === Math.trunc(max)) return first_price;
+  return (integral_of_trunc(max) - integral_of_trunc(min)) / (max - min);
+}
 
 function range_length(range) {
   return range[1] - range[0];
@@ -166,6 +189,20 @@ class PDF {
 
   max_value() {
     return this.value_end;
+  }
+
+  expected_price(buy_price, future) {
+    const scale = buy_price / RATE_MULTIPLIER;
+    let total = 0;
+    let mean = 0;
+    for (let i = 0; i < this.prob.length; i++) {
+      const rate = this.value_start + i;
+      const weight = this.prob[i] * (future ? (future.prob[rate - future.value_start] ?? 0) : 1);
+      if (!(weight > 0)) continue;
+      total += weight;
+      mean += weight * uniform_price_mean(rate * scale, (rate + 1) * scale);
+    }
+    return total > 0 ? mean / total : undefined;
   }
 
   /**
@@ -303,7 +340,7 @@ class Predictor {
   }
 
   intceil(val) {
-    return Math.trunc(val + 0.99999);
+    return Math.trunc(val + PRICE_ROUNDING_OFFSET);
   }
 
   minimum_rate_from_given_and_base(given_price, buy_price) {
@@ -350,6 +387,7 @@ class Predictor {
 
     const buy_price = given_prices[0];
     const rate_range = [rate_min, rate_max];
+    const mean_price = uniform_price_mean(rate_min * buy_price / RATE_MULTIPLIER, rate_max * buy_price / RATE_MULTIPLIER);
     let prob = 1;
 
     for (let i = start; i < start + length; i++) {
@@ -373,6 +411,7 @@ class Predictor {
       predicted_prices.push({
         min: min_pred,
         max: max_pred,
+        expected: isNaN(given_prices[i]) ? mean_price : given_prices[i],
       });
     }
     return prob;
@@ -401,11 +440,17 @@ class Predictor {
 
     const buy_price = given_prices[0];
     let rate_pdf = new PDF(start_rate_min, start_rate_max);
+    const end = start + length;
+    let last_observed = end - 1;
+    while (last_observed >= start && isNaN(given_prices[last_observed])) last_observed--;
+    const forward = [];
+    const observations = [];
     let prob = 1;
 
-    for (let i = start; i < start + length; i++) {
+    for (let i = start; i < end; i++) {
       let min_pred = this.get_price(rate_pdf.min_value(), buy_price);
       let max_pred = this.get_price(rate_pdf.max_value(), buy_price);
+      let expected = given_prices[i];
       if (!isNaN(given_prices[i])) {
         if (given_prices[i] < min_pred - this.fudge_factor || given_prices[i] > max_pred + this.fudge_factor) {
           // Given price is out of predicted range, so this is the wrong pattern
@@ -415,20 +460,41 @@ class Predictor {
         // Clamp the value to be in range now so the probability won't be totally biased to fudged values.
         const real_rate_range =
             this.rate_range_from_given_and_base(clamp(given_prices[i], min_pred, max_pred), buy_price);
+        observations[i] = real_rate_range;
         prob *= rate_pdf.range_limit(real_rate_range);
         if (prob == 0) {
           return 0;
         }
         min_pred = given_prices[i];
         max_pred = given_prices[i];
+      } else {
+        expected = rate_pdf.expected_price(buy_price);
+        if (i < last_observed) {
+          const snapshot = new PDF(rate_pdf.value_start, rate_pdf.value_end, false);
+          snapshot.prob = rate_pdf.prob.slice();
+          forward[i] = snapshot;
+        }
       }
 
       predicted_prices.push({
         min: min_pred,
         max: max_pred,
+        expected,
       });
 
       rate_pdf.decay(rate_decay_min, rate_decay_max);
+    }
+    if (forward.length) {
+      // Condition a gap on the observations on both sides of it.
+      const future = new PDF(...observations[last_observed]);
+      for (let i = last_observed - 1; i >= start; i--) {
+        future.decay(-rate_decay_max, -rate_decay_min);
+        if (observations[i]) {
+          if (future.range_limit(observations[i]) === 0) break;
+        } else if (forward[i]) {
+          predicted_prices[i].expected = forward[i].expected_price(buy_price, future) ?? predicted_prices[i].expected;
+        }
+      }
     }
     return prob;
   }
@@ -477,23 +543,8 @@ class Predictor {
       rate_range = range_intersect(rate_range, real_rate_range);
     }
 
-    const left_price = given_prices[start];
-    const right_price = given_prices[start + 2];
-    // Prob(left_price | middle_price), Prob(right_price | middle_price)
-    //
-    // A = rate_range[0], B = rate_range[1], C = rate_min, X = rate, Y = randfloat(rate_min, rate)
-    // rate = randfloat(A, B); sellPrices[work++] = intceil(randfloat(C, rate) * basePrice) - 1;
-    //
-    // => X->U(A,B), Y->U(C,X), Y-C->U(0,X-C), Y-C->U(0,1)*(X-C), Y-C->U(0,1)*U(A-C,B-C),
-    // let Z=Y-C,  Z1=A-C, Z2=B-C, Z->U(0,1)*U(Z1,Z2)
-    // Prob(Z<=t) = integral_{x=0}^{1} [min(t/x,Z2)-min(t/x,Z1)]/ (Z2-Z1)
-    // let F(t, ZZ) = integral_{x=0}^{1} min(t/x, ZZ)
-    //    1. if ZZ < t, then min(t/x, ZZ) = ZZ -> F(t, ZZ) = ZZ
-    //    2. if ZZ >= t, then F(t, ZZ) = integral_{x=0}^{t/ZZ} ZZ + integral_{x=t/ZZ}^{1} t/x
-    //                                 = t - t log(t/ZZ)
-    // Prob(Z<=t) = (F(t, Z2) - F(t, Z1)) / (Z2 - Z1)
-    // Prob(Y<=t) = Prob(Z>=t-C)
-    for (const price of [left_price, right_price]) {
+    const side_ranges = [];
+    for (const price of [given_prices[start], given_prices[start + 2]]) {
       if (isNaN(price)) {
         continue;
       }
@@ -505,22 +556,12 @@ class Predictor {
       }
       // TODO: How to deal with probability when there's fudge factor?
       // Clamp the value to be in range now so the probability won't be totally biased to fudged values.
-      const rate2_range = this.rate_range_from_given_and_base(clamp(price, min_pred, max_pred)+ 1, buy_price);
-      const F = (t, ZZ) => {
-        if (t <= 0) {
-          return 0;
-        }
-        return ZZ < t ? ZZ : t - t * (Math.log(t) - Math.log(ZZ));
-      };
-      const [A, B] = rate_range;
-      const C = rate_min;
-      const Z1 = A - C;
-      const Z2 = B - C;
-      const PY = (t) => (F(t - C, Z2) - F(t - C, Z1)) / (Z2 - Z1);
-      prob *= PY(rate2_range[1]) - PY(rate2_range[0]);
-      if (prob == 0) {
-        return 0;
-      }
+      side_ranges.push(this.rate_range_from_given_and_base(clamp(price, min_pred, max_pred) + 1, buy_price));
+    }
+    const { likelihood, center_mean, side_mean } = this.integrate_peak(rate_range, rate_min, side_ranges, buy_price);
+    if (side_ranges.length) {
+      if (likelihood === 0) return 0;
+      prob *= likelihood;
     }
 
     // * Then generate the real predicted range.
@@ -537,6 +578,7 @@ class Predictor {
     predicted_prices.push({
       min: min_pred,
       max: max_pred,
+      expected: isNaN(given_prices[start]) ? side_mean : given_prices[start],
     });
 
     // Main spike 2 (no -1 unlike the side peaks)
@@ -549,6 +591,7 @@ class Predictor {
     predicted_prices.push({
       min: min_pred,
       max: max_pred,
+      expected: isNaN(middle_price) ? center_mean : middle_price,
     });
 
     // Main spike 3
@@ -561,9 +604,51 @@ class Predictor {
     predicted_prices.push({
       min: min_pred,
       max: max_pred,
+      expected: isNaN(given_prices[start + 2]) ? side_mean : given_prices[start + 2],
     });
 
     return prob;
+  }
+
+  integrate_peak(rate_range, min_rate, side_ranges, buy_price) {
+    const [start_rate, end_rate] = rate_range;
+    const min_price = this.get_price(start_rate, buy_price);
+    const max_price = this.get_price(end_rate, buy_price);
+    const bin_count = max_price - min_price + 1;
+    // In-game buy prices fit in integer price bins. Bound work for other numeric inputs.
+    const use_price_bins = Number.isSafeInteger(min_price) && Number.isSafeInteger(max_price) &&
+        bin_count >= 1 && bin_count <= 128 && buy_price > 0;
+    const steps = use_price_bins ? bin_count : 128;
+    const scale = buy_price / RATE_MULTIPLIER;
+    let mass = 0;
+    let center_total = 0;
+    let side_total = 0;
+
+    for (let i = 0; i < steps; i++) {
+      const interval = use_price_bins
+        ? range_intersect(rate_range, this.rate_range_from_given_and_base(min_price + i, buy_price))
+        : [start_rate + (end_rate - start_rate) * i / steps,
+           start_rate + (end_rate - start_rate) * (i + 1) / steps];
+      if (interval === null || interval[0] === interval[1]) continue;
+      const width = range_length(interval);
+
+      for (const [point, coefficient] of PEAK_QUADRATURE) {
+        const peak = interval[0] + width * point;
+        let weight = coefficient * width;
+        // Side prices are independent conditional on the same hidden peak rate.
+        for (const side_range of side_ranges) {
+          weight *= range_intersect_length([min_rate, peak], side_range) / (peak - min_rate);
+        }
+        mass += weight;
+        center_total += weight * this.get_price(peak, buy_price);
+        side_total += weight * (uniform_price_mean(min_rate * scale, peak * scale) - 1);
+      }
+    }
+    return {
+      likelihood: mass / range_length(rate_range),
+      center_mean: mass > 0 ? center_total / mass : undefined,
+      side_mean: mass > 0 ? side_total / mass : undefined,
+    };
   }
 
   * generate_pattern_0_with_lengths(
@@ -1016,7 +1101,13 @@ function compute_expected_values(analyzed_possibilities) {
     if (poss.pattern_number === 4) continue; // skip global summary
     for (let i = 0; i < num_slots; i++) {
       const day = poss.prices[i + 2];
-      expected_values[i] += (poss.probability * (day.max + day.min)) / 2;
+      expected_values[i] += poss.probability * (day.expected ?? (day.max + day.min) / 2);
+    }
+  }
+  if (analyzed_possibilities[0].pattern_number === 4) {
+    for (let i = 0; i < num_slots; i++) {
+      const day = analyzed_possibilities[0].prices[i + 2];
+      if (day.min === day.max) expected_values[i] = day.min;
     }
   }
   return expected_values;

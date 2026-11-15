@@ -616,6 +616,16 @@ describe('Predictor', () => {
       );
       expect(prob).toBeGreaterThan(0);
     });
+
+    it('conditions a missing price on the later observation in the same phase', () => {
+      const given = [100, 100, 86, NaN, 80];
+      const predicted = [{ min: 100, max: 100 }, { min: 100, max: 100 }];
+      const prob = predictor.generate_decreasing_random_price(given, predicted, 2, 3, 0.85, 0.9, 0.03, 0.05);
+
+      expect(prob).toBeGreaterThan(0);
+      // From 86 to 80 across two decreasing slots, the intervening quote is 83.
+      expect(predicted[3].expected).toBeCloseTo(83, 4);
+    });
   });
 
   describe('generate_peak_price', () => {
@@ -650,6 +660,15 @@ describe('Predictor', () => {
       const expectedMin = predictor.get_price(minPeakRate, 100) - 1;
       expect(predicted[2].min).toBe(expectedMin);
       expect(predicted[4].min).toBe(expectedMin);
+    });
+
+    it('weights both side prices using their shared hidden peak', () => {
+      const given = [100, 100, 180, NaN, 180];
+      const predicted = [{ min: 100, max: 100 }, { min: 100, max: 100 }];
+      const probability = predictor.generate_peak_price(given, predicted, 2, 1.4, 2.0);
+
+      expect(probability).toBeCloseTo(0.000132072001, 11);
+      expect(predicted[3].expected).toBeCloseTo(189.5804, 3);
     });
   });
 
@@ -1281,6 +1300,15 @@ describe('compute_expected_values', () => {
       }
     }
   });
+
+  it('uses the rounded price distribution for both unobserved Small Spike sides', () => {
+    const prices = [100, 100, 65, 110, ...Array(10).fill(NaN)];
+    const expected = compute_expected_values(getAnalyzed(100, prices, false, PATTERN.SMALL_SPIKE));
+
+    expect(expected[3]).toBeCloseTo(154.50982, 4);
+    expect(expected[4]).toBeCloseTo(170.49999, 4);
+    expect(expected[5]).toBeCloseTo(154.50982, 4);
+  });
 });
 
 // ─── find_expected_maximum ───────────────────────────────────────────────────
@@ -1637,16 +1665,28 @@ describe('Expected value integration', () => {
     const analyzed = p.analyze_possibilities();
     const ev = compute_expected_values(analyzed);
 
-    // Each expected value should be the probability-weighted midpoint
+    // Each expected value should weight the candidate's mean by its probability.
     for (let slot = 0; slot < 12; slot++) {
       let manual_ev = 0;
       for (const poss of analyzed) {
         if (poss.pattern_number === 4) continue;
         const day = poss.prices[slot + 2];
-        manual_ev += (poss.probability * (day.max + day.min)) / 2;
+        expect(Number.isFinite(day.expected)).toBe(true);
+        manual_ev += poss.probability * day.expected;
       }
       expect(ev[slot]).toBeCloseTo(manual_ev, 10);
     }
+  });
+
+  it.each([[115, 'sell-later'], [120, 'sell-now']])('compares a Friday offer of %i to Saturday slot means', (offer, action) => {
+    const prices = [100, 100, 112, 120, 75, 68, 59, 115, 125, 73, 67, offer, NaN, NaN];
+    const predictor = new Predictor(prices, false, PATTERN.SMALL_SPIKE);
+    const expected = compute_expected_values(predictor.analyze_possibilities());
+    const { expected_maximum } = find_expected_maximum(expected, 10);
+
+    expect(expected[10]).toBeCloseTo(115.49999, 5);
+    expect(expected[11]).toBeCloseTo(115.49999, 5);
+    expect(get_sell_buy_decision(offer, 9, expected_maximum, prices.length).action).toBe(action);
   });
 
   it('expected maximum is always within global min/max bounds', () => {

@@ -553,13 +553,13 @@ const calculateOutput = function (data, first_buy, previous_pattern) {
     $("#decision").append(
       `<h2>${i18next.t("output.sell-now-title")}</h2>
       <p>${i18next.t("output." + decision.action)}
-      ${i18next.t("output.sell-advice", [expected_maximum.toFixed(0), labels[expected_argmax + 1]])}</p>`
+      ${i18next.t("output.sell-slot-average", [expected_maximum.toFixed(2), labels[expected_argmax + 1]])}</p>`
     );
   } else if (decision && decision.type === "buy") {
     $("#decision").append(
       `<h2>${i18next.t("output.should-buy-title")}</h2>
       <p>${i18next.t("output." + decision.action)}
-      ${i18next.t("output.buy-advice", [expected_maximum.toFixed(0)])}</p>`
+      ${i18next.t("output.buy-slot-average", [expected_maximum.toFixed(2)])}</p>`
     );
   }
 };

@@ -2,15 +2,15 @@
 
 Audited Turnip Prophet at `4c46557`, using fixtures that match the prediction engine at zero bell tolerance. The reference values use continuous draws and the game's integer price formula. Each fixture supplies its own active slot.
 
-## Current calculation
+## Baseline calculation
 
-The predictor supplies a probability and a price range for each candidate pattern and phase layout. The chart's expected price averages those range midpoints using the candidate probabilities. For sell advice the app finds the highest of the later chart values, then tells the player to wait only if that value exceeds the current offer. Sunday buy advice also uses the highest per-slot estimate across the week. [Price estimates and advice](js/predictions.js#L1007) · [Call site](js/scripts.js#L516) · [Chart series](js/chart.js#L38)
+The predictor supplied a probability and a price range for each candidate pattern and phase layout. The chart averaged those range midpoints using the candidate probabilities. For sell advice the app found the highest of the later chart values, then told the player to wait only if that value exceeded the current offer. Sunday buy advice also used the highest per-slot estimate across the week.
 
 ## 1. Range midpoints can misstate the mean and reverse advice
 
-At a buy price of 100, entering Monday AM at 65 and Monday PM at 110 isolates a Small Spike. The chart gives both sides of that spike, Tuesday PM and Wednesday PM, an expected price of **169** from the 139–199 range. Each side's hidden rate is drawn between 1.4 and the shared peak rate, which itself is drawn between 1.4 and 2.0. This makes lower side prices more likely. Integrating the price probabilities gives a mean of **154.51** bells for either side. [Small Spike game rules](https://gist.github.com/Treeki/85be14d297c80c8b3c0a76375743325b) · [Current midpoint calculation](js/predictions.js#L1012)
+At a buy price of 100, entering Monday AM at 65 and Monday PM at 110 isolates a Small Spike. The baseline chart gave both sides of that spike, Tuesday PM and Wednesday PM, an expected price of **169** from the 139–199 range. Each side's hidden rate is drawn between 1.4 and the shared peak rate, which itself is drawn between 1.4 and 2.0. This makes lower side prices more likely. Integrating the price probabilities gives a mean of **154.51** bells for either side. [Small Spike game rules](https://gist.github.com/Treeki/85be14d297c80c8b3c0a76375743325b)
 
-A second fixture isolates a Fluctuating week with two independent high prices left on Saturday. With a Friday PM offer of **115**, the app says to sell because the 90–140 range has a midpoint of 115 and ties favor selling. The actual per-slot mean under the model is **115.50**, after rounding each possible price to an integer. Either Saturday slot is better in expectation even if the player must choose one in advance.
+A second fixture isolates a Fluctuating week with two independent high prices left on Saturday. With a Friday PM offer of **115**, the baseline advised selling because the 90–140 range has a midpoint of 115 and ties favor selling. The actual per-slot mean under the model is **115.50**, after rounding each possible price to an integer. Either Saturday slot is better in expectation even if the player must choose one in advance.
 
 ## 2. Correct slot means still produce a different decision from reassessing later
 
@@ -26,13 +26,13 @@ For independent Saturday prices `X` and `Y`, these quantities are `max(E[X], E[Y
 
 ## 3. Two Small Spike observations share the same hidden peak
 
-At a base price of 100, give both side prices as 180 and leave the center blank. `generate_peak_price` assigns the observations a joint likelihood of about **0.00429%** by multiplying their marginal likelihoods. Both draws share the same center rate. Averaging the product of their likelihoods conditional on that rate gives **0.01321%**, about **3.08×** the current result. This difference can affect the weighted mean when multiple candidates survive. The fixture checks the likelihood directly. [Current peak likelihood calculation](js/predictions.js#L480)
+At a base price of 100, give both side prices as 180 and leave the center blank. The baseline `generate_peak_price` assigned the observations a joint likelihood of about **0.00429%** by multiplying their marginal likelihoods. Both draws share the same center rate. Averaging the product of their likelihoods conditional on that rate gives **0.01321%**, about **3.08×** the baseline result. This difference can affect the weighted mean when multiple candidates survive. The fixture checks the likelihood directly.
 
 ## Reproduce
 
 Use first-time buyer **No**, previous pattern **Small Spike**, and Sunday buy price **100** for both fixtures. Enter the prices in order from Monday AM through Friday PM and leave Saturday blank for the Fluctuating fixture. For Small Spike, enter Monday only.
 
-| Fixture | Entered prices | Current result |
+| Fixture | Entered prices | Baseline result |
 | --- | --- | --- |
 | Fluctuating | 112, 120, 75, 68, 59, 115, 125, 73, 67, 120 | Saturday estimates 115 and 115. At Friday PM the advice is to sell. Use 115 for the last entry to reproduce finding 1. |
 | Small Spike | 65, 110 | Tuesday PM and Wednesday PM both show an estimate of 169. |
@@ -92,8 +92,10 @@ for (let i = 0; i < steps; i++) {
 console.log({ engine, joint });
 ```
 
-## Suggested first implementation
+## Implemented correction
 
-Compute per-slot means from the existing rate distributions and the integer conversion, then weight those means by candidate probability. Use the 154.51-bell side estimate and the 115.50-bell Saturday estimate as regression cases. Correct the shared-peak likelihood with its own test so changes to candidate weights can be reviewed independently. Before changing the sell/wait rule, decide whether the advice assumes a fixed selling slot or a player who can check again and act on new information. Keep the 120-bell Friday fixture to test the chosen rule.
+The predictor now weights estimated integer prices from each candidate's rate distribution. A decreasing phase uses forward and backward evidence for missing slots. The Small Spike uses numerical integration over its shared center rate to compute the joint likelihood and each missing slot's mean. The existing piecewise rate model and the game's approximate integer conversion define the resolution of these calculations.
+
+The advice assumes one selling slot chosen from the current forecasts. The Friday fixture now recommends waiting at 115 bells and selling at 120. The independent Saturday scenario in section 2 illustrates the potential benefit of a policy that compares offers again. Such a policy would need to account for the information available at each decision.
 
 The browser's choice of active slot and advice on loaded historical weeks belongs to the separate clock investigation. The audit fixtures supply the active slot directly.

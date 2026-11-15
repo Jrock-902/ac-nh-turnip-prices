@@ -135,13 +135,13 @@ After your first purchase, the normal transition table kicks in for the followin
 
 The app calculates an **expected value** for each remaining time slot. This is the probability-weighted average of all possible prices across all remaining patterns. Think of it as: "If I could replay this week 1,000 times with the same data so far, what would the average price be at each slot?"
 
-The sell/buy advice works like this:
+The advice compares your current price with the highest average forecast for a single selling slot.
 
-- **"You should sell now"** — your current price is higher than the expected maximum of all remaining slots. Holding out will likely result in a lower price.
-- **"You should sell later"** — the expected maximum of a future slot is higher than your current price. The app tells you which slot and what price to aim for.
-- **"You should buy"** — on Sunday, if the expected maximum sell price for the week is higher than the current buy price, it's worth buying turnips.
+- **You should sell now.** Your current price equals or exceeds the average forecast for every remaining slot.
+- **You should sell later.** One of the remaining slots has a higher average forecast than your current price. The app shows that slot and its forecast.
+- **You should buy.** On Sunday, at least one selling slot has an average forecast above the current buy price.
 
-The key word is "expected" — this is about averages and probabilities, not guarantees. A Large Spike *could* still happen even if the predictor says it's only 10% likely. The advice helps you make the best decision given the information you have, but the game always has a random element.
+The comparison assumes you choose one selling slot from the current forecasts. The advice updates when you enter another price.
 
 ---
 
