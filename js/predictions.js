@@ -530,6 +530,9 @@ class Predictor {
     // Main spike 1
     let min_pred = this.get_price(rate_min, buy_price) - 1;
     let max_pred = this.get_price(rate_max, buy_price) - 1;
+    if (!isNaN(middle_price)) {
+      max_pred = clamp(middle_price - 1, min_pred, max_pred);
+    }
     if (!isNaN(given_prices[start])) {
       min_pred = given_prices[start];
       max_pred = given_prices[start];

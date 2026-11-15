@@ -1186,12 +1186,14 @@ describe('Historical prediction reports', () => {
     expect(repeatBuyMatches).toHaveLength(0);
   });
 
-  it.fails('caps the missing Wednesday AM price below the known small spike peak in a partial #595 replay', () => {
+  it('caps the missing Wednesday AM price below the known small spike peak in a partial #595 replay', () => {
     // Omit Wednesday AM and stop at Wednesday PM to isolate the price bounds around the peak.
     const prices = [103, 103, 51, 45, 113, 150, NaN, 167, NaN, NaN, NaN, NaN, NaN, NaN];
-    const [summary] = new Predictor(prices, true, PATTERN.DECREASING).analyze_possibilities();
+    const [summary, ...matches] = new Predictor(prices, true, PATTERN.DECREASING).analyze_possibilities();
 
-    expect(summary.prices[6].max).toBe(166);
+    expect(matches.length).toBeGreaterThan(0);
+    expect(summary.prices[6]).toEqual({ min: 149, max: 166 });
+    expect(summary.prices[8]).toEqual(summary.prices[6]);
   });
 });
 
