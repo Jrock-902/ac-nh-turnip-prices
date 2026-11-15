@@ -230,6 +230,15 @@ const initialize = function () {
     console.error(e);
   }
 
+  if (typeof initializeWeekHistory === 'function') {
+    initializeWeekHistory(() => ({
+      buyPrice: parsePositiveInteger(parseInt(buy_input.val(), 10)),
+      sellPrices: getSellPrices().map(parsePositiveInteger),
+      firstBuy: getCheckedRadio(first_buy_radios) === 'true',
+      previousPattern: parseInt(getCheckedRadio(previous_pattern_radios), 10),
+    }));
+  }
+
   $(document).trigger("input");
 
   var welcomeBox = document.getElementById("welcome-box");

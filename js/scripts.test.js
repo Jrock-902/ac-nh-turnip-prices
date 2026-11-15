@@ -12,9 +12,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const predictionsSource = fs.readFileSync(path.join(__dirname, 'predictions.js'), 'utf-8');
 const scriptsSource = fs.readFileSync(path.join(__dirname, 'scripts.js'), 'utf-8');
 const profitSource = fs.readFileSync(path.join(__dirname, 'profit.js'), 'utf-8');
+const historySource = fs.readFileSync(path.join(__dirname, 'history.js'), 'utf-8');
 const translationsSource = fs.readFileSync(path.join(__dirname, 'translations.js'), 'utf-8');
-const calculatorHTML = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8')
-  .match(/<section class="profit-calculator"[\s\S]*?<\/section>/)[0];
+const indexHTML = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf-8');
+const calculatorHTML = indexHTML.match(/<section class="profit-calculator"[\s\S]*?<\/section>/)[0];
+const historyHTML = indexHTML.match(/<details id="weekly-history"[\s\S]*?<\/details>/)[0];
 const english = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'locales', 'en.json'), 'utf-8'));
 
 // Minimal HTML structure matching index.html
@@ -189,7 +191,8 @@ function createI18nextMock() {
  * @param {object} options.localStorage - initial localStorage entries
  */
 function setupEnvironment(options = {}) {
-  const dom = new JSDOM(HTML_TEMPLATE, {
+  const html = options.historyTranslator ? HTML_TEMPLATE.replace('</form>', '</form>' + historyHTML) : HTML_TEMPLATE;
+  const dom = new JSDOM(html, {
     url: `http://localhost${options.search || ''}`,
     pretendToBeVisual: true,
     runScripts: 'dangerously',
@@ -200,6 +203,8 @@ function setupEnvironment(options = {}) {
   // Mock localStorage (read-only in JSDOM, so use defineProperty)
   const store = { ...(options.localStorage || {}) };
   const storageMock = {
+    get length() { return Object.keys(store).length; },
+    key: index => Object.keys(store)[index] ?? null,
     getItem: (key) => key in store ? store[key] : null,
     setItem: (key, val) => { store[key] = String(val); },
     removeItem: (key) => { delete store[key]; },
@@ -213,10 +218,15 @@ function setupEnvironment(options = {}) {
   const $ = createJQueryMock(document);
   window.$ = $;
   window.jQuery = $;
-  window.i18next = createI18nextMock();
+  window.i18next = options.historyTranslator || createI18nextMock();
   window.Chart = class MockChart {
-    constructor() { this.data = {}; this.options = {}; }
+    constructor(_canvas, config) {
+      this.data = config?.data ?? {};
+      this.options = config?.options ?? {};
+      if (config) window.historyChartData = this.data;
+    }
     update() {}
+    destroy() {}
   };
   window.chart_instance = null;
   window.update_chart = vi.fn();
@@ -235,6 +245,7 @@ function setupEnvironment(options = {}) {
   const vmContext = dom.getInternalVMContext();
   vm.runInContext(toVar(predictionsSource), vmContext, { filename: 'predictions.js' });
   vm.runInContext(toVar(profitSource), vmContext, { filename: 'profit.js' });
+  if (options.historyTranslator) vm.runInContext(historySource, vmContext, { filename: 'history.js' });
   vm.runInContext(toVar(scriptsSource), vmContext, { filename: 'scripts.js' });
 
   return { window, document, dom, store };
@@ -1206,6 +1217,129 @@ describe('initialize', () => {
     const env = setupEnvironment();
     expect(() => env.window.initialize()).not.toThrow();
     expect(env.window.state.initialized).toBe(true);
+  });
+});
+
+describe('Weekly history', () => {
+  const historyKey = week => 'turnip-history:v1:' + week;
+  const largeSpike = [93, 89, 85, 81, 76, 113, 192, 265, 158, 137, 85, 77];
+  let env;
+  let historyTranslator;
+  const field = id => env.document.getElementById(id);
+
+  function openHistory(environment) {
+    const panel = environment.document.getElementById('weekly-history');
+    panel.open = true;
+    panel.dispatchEvent(new environment.window.Event('toggle'));
+  }
+
+  function save(date, buyPrice, sellPrices, previousPattern = 'unknown') {
+    field('history-date').value = date;
+    field('buy').value = buyPrice;
+    field('pattern-radio-' + previousPattern).checked = true;
+    for (let slot = 0; slot < 12; slot++) {
+      field('sell_' + (slot + 2)).value = sellPrices[slot] ?? '';
+    }
+    field('history-form').querySelector('button[type="submit"]').click();
+  }
+
+  beforeEach(async () => {
+    historyTranslator = i18next.createInstance();
+    await historyTranslator.init({ lng: 'en', resources: { en: { translation: english } } });
+    env = setupEnvironment({
+      historyTranslator,
+      now: new Date(2026, 10, 15, 15).getTime(),
+    });
+    env.window.initialize();
+    openHistory(env);
+  });
+  afterEach(() => { env.window.close(); });
+
+  it('keeps all slots and prediction settings in the correct Sunday week across reset and reload', () => {
+    expect(field('history-date').value).toBe('2026-11-15');
+    save('2026-11-14', '103', largeSpike, 'small-spike');
+    const entry = JSON.parse(env.store[historyKey('2026-11-08')]);
+    expect(entry).toEqual({
+      weekOf: '2026-11-08',
+      buyPrice: 103,
+      sellPrices: largeSpike,
+      firstBuy: false,
+      previousPattern: 3,
+      pattern: 1,
+    });
+    expect(field('history-date').value).toBe('2026-11-08');
+    expect(field('buy').value).toBe('103');
+    field('reset').click();
+    expect(field('buy').value).toBe('');
+    expect(JSON.parse(env.store[historyKey('2026-11-08')])).toEqual(entry);
+
+    const reloaded = setupEnvironment({ historyTranslator, localStorage: env.store });
+    try {
+      reloaded.window.initialize();
+      openHistory(reloaded);
+      const archived = reloaded.document.querySelector('#history-weeks details');
+      expect(archived.querySelector('summary').textContent).toContain('Large Spike · 265');
+      expect([...archived.querySelectorAll('tbody td')].map(cell => Number(cell.textContent))).toEqual(largeSpike);
+      expect(reloaded.document.getElementById('buy').value).toBe('');
+    } finally {
+      reloaded.window.close();
+    }
+  });
+
+  it('compares recorded highs across full and partial weeks without inferring missing prices', () => {
+    save('2026-11-10', '103', largeSpike);
+    save('2026-11-16', '', [81]);
+    const partial = JSON.parse(env.store[historyKey('2026-11-15')]);
+
+    expect(partial.buyPrice).toBeNull();
+    expect(partial.pattern).toBeNull();
+    expect(partial.sellPrices).toEqual([81, ...Array(11).fill(null)]);
+    expect(field('history-count').textContent).toBe('2');
+    expect(field('history-best').textContent).toBe('265');
+    expect(field('history-average').textContent).toBe('173');
+    expect(field('history-patterns').textContent).toContain('Large Spike · 1');
+    expect(field('history-patterns').textContent).toContain('Unidentified · 1');
+    expect(env.window.historyChartData.datasets.map(dataset => dataset.data)).toEqual([[265, 81], [103, null]]);
+    expect(field('history-weeks').firstElementChild.dataset.week).toBe('2026-11-15');
+    env.window.update();
+    expect([...new URLSearchParams(env.window.location.search).keys()]).toEqual(['prices']);
+  });
+
+  it('asks before replacing or deleting a week and keeps other snapshots', () => {
+    save('2026-11-10', '103', largeSpike);
+    save('2026-11-16', '', [81]);
+    const newer = env.store[historyKey('2026-11-15')];
+    env.window.confirm.mockReturnValueOnce(false);
+    save('2026-11-21', '', [99]);
+    expect(env.store[historyKey('2026-11-15')]).toBe(newer);
+
+    save('2026-11-21', '', [99]);
+    expect(JSON.parse(env.store[historyKey('2026-11-15')]).sellPrices[0]).toBe(99);
+    expect(field('history-count').textContent).toBe('2');
+
+    const remove = () => field('history-weeks').firstElementChild.querySelector('button').click();
+    env.window.confirm.mockReturnValueOnce(false);
+    remove();
+    expect(field('history-count').textContent).toBe('2');
+    remove();
+    expect(env.store[historyKey('2026-11-15')]).toBeUndefined();
+    expect(env.store[historyKey('2026-11-08')]).toBeDefined();
+    expect(field('history-count').textContent).toBe('1');
+    expect(field('history-best').textContent).toBe('265');
+  });
+
+  it('reports missing prices and failed writes while preserving existing records', () => {
+    save('2026-11-14', '103', []);
+    expect(field('history-status').textContent).toContain('Enter at least one selling price');
+    expect(env.store[historyKey('2026-11-08')]).toBeUndefined();
+    save('2026-11-14', '103', largeSpike);
+    const saved = env.store[historyKey('2026-11-08')];
+    vi.spyOn(env.window.localStorage, 'setItem').mockImplementation(() => { throw new Error('storage unavailable'); });
+    save('2026-11-18', '100', [81]);
+    expect(field('history-status').textContent).toContain('could not access browser storage');
+    expect(env.store[historyKey('2026-11-15')]).toBeUndefined();
+    expect(env.store[historyKey('2026-11-08')]).toBe(saved);
+    expect(field('history-count').textContent).toBe('1');
   });
 });
 

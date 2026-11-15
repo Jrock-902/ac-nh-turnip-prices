@@ -65,9 +65,9 @@ i18next
 
   let delayTimer;
   $(document).on('input', function(event) {
-    // Radio buttons and calculator controls have their own handlers.
+    // Radio buttons, the calculator, and the history form have their own handlers.
     const { type, id } = event.target;
-    if (type === 'radio' || id === 'turnip-quantity' || id === 'profit-sell-price') return;
+    if (type === 'radio' || id === 'turnip-quantity' || id === 'profit-sell-price' || id === 'history-date') return;
     // adding short delay after input to help mitigate potential lag after keystrokes
     clearTimeout(delayTimer);
     delayTimer = setTimeout(function() {

@@ -9,6 +9,7 @@ This is a fork of [mikebryant/ac-nh-turnip-prices](https://github.com/mikebryant
 - **Expected value calculations** — shows the probability-weighted expected price for each time slot, so you can see what a "typical" outcome looks like rather than just the min/max range
 - **Sell/buy decision advice** — compares your current price against the expected future maximum and tells you whether to sell now or wait
 - **Pattern likelihood indicator** — as you enter prices throughout the week, shows which pattern you're most likely on and how confident the prediction is
+- **Weekly history** — save dated price snapshots in your browser and compare weekly highs, Sunday prices, and pattern counts
 - **Dismissable welcome message** — the intro dialog can be closed and won't reappear until you reset
 - **Hamburger menu** — language, theme, and credits moved to a slide-out drawer to reduce clutter
 - **High color contrast mode** — toggle for colorblind-friendly table colors, works with light and dark themes

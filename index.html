@@ -273,6 +273,42 @@
 
 
 
+      <details id="weekly-history" class="weekly-history">
+        <summary data-i18n="history.title"></summary>
+        <p data-i18n="history.description"></p>
+        <form id="history-form">
+          <label for="history-date" data-i18n="history.date-label"></label>
+          <input id="history-date" type="date" required>
+          <button type="submit" class="button" data-i18n="history.save"></button>
+        </form>
+        <p id="history-status" role="status" aria-live="polite"></p>
+        <p id="history-empty" data-i18n="history.empty"></p>
+        <div id="history-results" hidden>
+          <dl class="history-stats">
+            <div>
+              <dt data-i18n="history.weeks"></dt>
+              <dd id="history-count"></dd>
+            </div>
+            <div>
+              <dt data-i18n="history.best"></dt>
+              <dd id="history-best"></dd>
+            </div>
+            <div>
+              <dt data-i18n="history.average"></dt>
+              <dd id="history-average"></dd>
+            </div>
+          </dl>
+          <h3 id="history-trend-title" data-i18n="history.trend"></h3>
+          <div class="history-chart">
+            <canvas id="history-chart" role="img" aria-labelledby="history-trend-title"></canvas>
+          </div>
+          <h3 data-i18n="history.patterns"></h3>
+          <ul id="history-patterns" class="history-patterns"></ul>
+          <h3 data-i18n="history.snapshots"></h3>
+          <div id="history-weeks" class="history-weeks"></div>
+        </div>
+      </details>
+
       <h2 data-i18n="output.title"></h2>
       <div id="decision"></div>
 
@@ -376,6 +412,7 @@
   <script src="js/chart.js"></script>
   <script src="js/predictions.js"></script>
   <script src="js/profit.js"></script>
+  <script src="js/history.js"></script>
   <script src="js/scripts.js"></script>
   <script src="js/translations.js"></script>
   <script src="js/themes.js"></script>

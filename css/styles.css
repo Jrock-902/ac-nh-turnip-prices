@@ -541,6 +541,124 @@ input[class=now]:placeholder-shown::placeholder {
   color: var(--button-reset-text-color);
 }
 
+.weekly-history {
+  box-sizing: border-box;
+  width: min(92%, 760px);
+  margin: 24px auto;
+  padding: 16px clamp(14px, 4vw, 28px);
+  border-radius: 20px;
+  background: var(--dialog-bg-color);
+  color: var(--dialog-text-color);
+  text-align: start;
+}
+
+.weekly-history summary {
+  padding-block: 8px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.weekly-history > summary {
+  font-size: 1.25rem;
+}
+
+#history-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+#history-date {
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--select-border-color);
+  border-radius: 8px;
+  font: inherit;
+  color: var(--dialog-text-color);
+  background: var(--input-bg-color);
+}
+
+.weekly-history .button {
+  margin: 4px 0;
+  font-size: 1rem;
+}
+
+#history-status:empty {
+  margin: 0;
+}
+
+.history-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.history-stats > div {
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--center-bg-color);
+}
+
+.history-stats dd {
+  margin: 4px 0 0;
+  font-size: 1.3rem;
+  font-weight: 700;
+}
+
+.history-chart {
+  position: relative;
+  height: clamp(170px, 30vw, 240px);
+}
+
+.history-patterns {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-patterns li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(55px, 40%);
+  align-items: center;
+  gap: 8px;
+  padding-block: 4px;
+}
+
+.history-patterns meter {
+  width: 100%;
+}
+
+.history-weeks details {
+  margin-block: 8px;
+  padding: 3px 12px;
+  border-radius: 10px;
+  background: var(--center-bg-color);
+}
+
+.history-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.history-settings dd {
+  margin: 4px 0 0;
+  font-weight: 700;
+}
+
+.history-prices {
+  width: 100%;
+  margin-bottom: 8px;
+  text-align: start;
+}
+
+.history-prices th,
+.history-prices td {
+  padding: 4px 6px;
+  text-align: start;
+}
+
 .table-wrapper {
   display: inline-block;
   max-width: 98%;
